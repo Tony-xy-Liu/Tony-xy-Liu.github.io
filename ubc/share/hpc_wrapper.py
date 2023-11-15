@@ -2,6 +2,8 @@
 #########################################################################################
 # setup
 
+import os
+from pathlib import Path
 _VER    = "4.1"
 
 NAME    = "job_name"
@@ -30,54 +32,74 @@ CONSTRAINT = None
 def MakeJobs():
     context = []
 
-    _root = Path("/home/txyliu/project/data/sg_fasta")
-    for i, f in enumerate(os.listdir(_root)):
-        print(i, end="\r")
-        fpath = _root.joinpath(f)
-        name = f.split(".")[0].replace(" ", "_")
-        context.append(dict(
-            name=name,
-            genome=str(fpath),
-            image="/home/txyliu/project/data/sgrnable.sif",
-            gfp="/home/txyliu/project/data/gfp.fa",
-        ))
+    _read_paths = [
+        "/project/6004975/phyberos/fosmids/data/Fosmids/Beaver_cecum/2nd_hits/EKL/Raw_Data/EKL_Cecum_ligninases_pool_secondary_hits.fastq.gz",
+        "/project/6004975/phyberos/fosmids/data/Fosmids/Beaver_cecum/2nd_hits/EOL/Raw_Data/EOL_Cecum_ligninases_pool_secondary_hits.fastq.gz",
+        "/project/6004975/phyberos/fosmids/data/Fosmids/Beaver_colon/2nd_hits/EKL/Raw_Data/EKL_Colon_ligninases_pool_secondary_hits.fastq.gz",
+        "/project/6004975/phyberos/fosmids/data/Fosmids/Beaver_colon/2nd_hits/EOL/Raw_Data/EOL_Colon_ligninases_pool_secondary_hits.fastq.gz",
+    ]
+
+    for assembler in "megahit, spades_meta, spades_isolate, spades_sc".split(", "):
+        for reads in _read_paths:
+            rpath = Path(reads)
+            _root = rpath.parents[2]
+            
+            beaver_loc = rpath.parents[3].name
+            x = rpath.parents[1].name
+            context.append(dict(
+                name=f"{beaver_loc}-{x}-{assembler}",
+                reads=str(reads),
+                ends=str(_root.parent.joinpath("endseqs.fasta")),
+                assembler=assembler,
+            ))
+
     return context
 
 def RunJob(DATA, OUT_DIR, cpus, mem):
-    name, genome, IMG, gfp = [DATA[k] for k in "name, genome, image, gfp".split(", ")]
+    zipped_reads = Path(DATA["reads"])
+    ends = Path(DATA["ends"])
+    assembler = DATA["assembler"]
+    NAME = DATA["name"]
+
+    IMAGE = "fabfos.sif"
+    FFWS = "ffws"
     os.system(f"""\
-    echo "setting up"
-    date
+        date
 
-    cp {gfp} ./gfp.fa
-    cp {genome} ./genome.fa.gz
-    pigz -d ./genome.fa.gz
+        echo "gather inputs"
+        cp /project/6004975/phyberos/fosmids/main/fabfos/{IMAGE} ./{IMAGE}
+        cp /project/6004975/phyberos/fosmids/main/fabfos/ecoli_k12_mg1655.fasta ./backbone.fa
+        cp /project/6004975/phyberos/fosmids/main/fabfos/pcc1.fasta ./vector.fa
+        mkdir -p reads
+        cp {zipped_reads} ./reads.fq.gz
+        pigz -kdc -p {cpus} ./reads.fq.gz >./reads/{NAME}.fq
+        cp {ends} ./ends.fa
+        mkdir -p ./{FFWS}
 
-    find .
-    du -sh *
+        find .
     """)
 
-    out = OUT_DIR.joinpath(name)
     os.system(f"""\
-    echo "---"
-    echo "genome: {name}"
-    echo "running"
-    date
+        echo "starting"
+        singularity run -B ./:/ws {IMAGE} \
+            fabfos --threads {cpus} --overwrite \
+                --output /ws/{NAME} \
+                --assembler {assembler} \
+                -i --reads /ws/reads/{NAME}.fq \
+                -b /ws/backbone.fa \
+                --vector /ws/vector.fa \
+                --ends /ws/ends.fa \
+                --ends-name-regex "\\w+_\\d+" \
+                --ends-fw-flag "FW"
+    """)
 
-    singularity run -c -B ./:/ws {IMG} \
-        sgrnable \
-        -g /ws/genome.fa /ws/gfp.fa \
-        -t /ws/gfp.fa \
-        -o /ws/out
+    os.system(f"""\
+        echo "gathering results"
 
-    echo "---"
-    echo "copying back results"
-    date
+        mkdir -p {OUT_DIR}/{NAME}
+        cp -Lr ./{NAME} {OUT_DIR}/{NAME}
 
-    mkdir -p {out}
-    cp -r ./out/* {out}/
-    find .
-    du -sh *
+        date
     """)
 
 #########################################################################################
