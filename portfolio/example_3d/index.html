@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CYANOVERSE</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0a; }
+    #canvas { width: 100%; height: 100%; display: block; }
+    #overlays {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #overlays > * { pointer-events: auto; }
+
+    /* --- Slide counter --- */
+    #slide-counter {
+      position: fixed;
+      bottom: 1rem;
+      right: 1.5rem;
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.35);
+      z-index: 20;
+      pointer-events: none;
+    }
+
+    /* --- Nav dots --- */
+    .nav-dots {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 0.6rem;
+      z-index: 20;
+    }
+    .nav-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.3);
+      cursor: pointer;
+      transition: background 0.3s, transform 0.3s;
+    }
+    .nav-dot.active {
+      background: rgba(255,255,255,0.8);
+      transform: scale(1.3);
+    }
+
+    /* --- Title / subtitle overlays --- */
+    #overlays .title {
+      position: fixed;
+      top: 2rem; left: 2.5rem;
+      font-family: system-ui, sans-serif;
+      font-size: 1.6rem;
+      font-weight: 600;
+      color: #e0e8f0;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+    #overlays .subtitle {
+      position: fixed;
+      top: 4.2rem; left: 2.5rem;
+      font-family: system-ui, sans-serif;
+      font-size: 0.95rem;
+      color: #7090b0;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    /* --- Legend --- */
+    #legend {
+      position: fixed;
+      bottom: 4rem; left: 2rem;
+      font-family: system-ui, sans-serif;
+      font-size: 0.75rem;
+      color: #d0d8e4;
+      pointer-events: none;
+      white-space: nowrap;
+      backdrop-filter: blur(4px);
+    }
+    #legend h3 {
+      margin: 0 0 0.4rem 0;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #a0b0c0;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin: 0.2rem 0;
+    }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* --- Tooltip --- */
+    #tooltip {
+      position: absolute;
+      display: none;
+      background: rgba(10, 15, 30, 0.9);
+      border: 1px solid rgba(80, 120, 180, 0.3);
+      border-radius: 6px;
+      padding: 0.4rem 0.6rem;
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: #d0d8e4;
+      pointer-events: none;
+      white-space: nowrap;
+      backdrop-filter: blur(4px);
+    }
+
+    /* --- Standard panel (glass) --- */
+    .panel {
+      position: fixed;
+      background: rgba(15, 15, 25, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 1.5rem;
+      color: #e0e0e0;
+      font-family: system-ui, sans-serif;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      display: none;
+    }
+    .panel.visible { opacity: 1; }
+
+    /* --- Clear panel (borderless, transparent) --- */
+    .panel-clear {
+      position: fixed;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      padding: 0;
+      color: #e0e0e0;
+      font-family: system-ui, sans-serif;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      display: none;
+    }
+    .panel-clear.visible { opacity: 1; }
+
+    /* --- Split-panel overlay --- */
+    #split-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 15;
+    }
+    .split-label {
+      position: absolute;
+      bottom: 5rem;
+      font-family: system-ui, sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .split-label.split-left { left: 25%; transform: translateX(-50%); }
+    .split-label.split-right { left: 75%; transform: translateX(-50%); }
+    .split-divider {
+      position: absolute;
+      top: 0;
+      width: 2px;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.18);
+      left: 50%;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+
+    /* --- Chart label overlay --- */
+    #clustering-labels {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 15;
+    }
+    .chart-label {
+      position: absolute;
+      font-family: system-ui, -apple-system, sans-serif;
+      white-space: nowrap;
+    }
+
+    /* --- Title page --- */
+    #title-page {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: #0d1b2a;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 25;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    #title-page .tp-title {
+      font-size: 3.2rem;
+      font-weight: 300;
+      color: #e0e8f0;
+      letter-spacing: 0.08em;
+    }
+    #title-page .tp-meta {
+      margin-top: 1.2rem;
+      font-size: 1rem;
+      font-weight: 300;
+      color: rgba(200, 215, 230, 0.7);
+      letter-spacing: 0.04em;
+    }
+    #title-page .tp-date {
+      margin-top: 0.3rem;
+      font-size: 0.95rem;
+      font-weight: 300;
+      color: rgba(200, 215, 230, 0.6);
+    }
+
+    /* --- Confusion matrix overlay --- */
+    #confusion-matrix {
+      position: fixed;
+      bottom: 4rem;
+      left: 2rem;
+      pointer-events: none;
+      z-index: 16;
+      display: none;
+    }
+
+  </style>
+  <script type="module" crossorigin src="/portfolio/example_3d/assets/index-CVkF-_Ox.js"></script>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="slide-counter"></div>
+  <div id="overlays">
+    <div id="legend"></div>
+    <div id="info"></div>
+    <div id="tooltip"></div>
+  </div>
+  <div id="split-overlay" style="display: none;">
+    <div class="split-divider"></div>
+    <div class="split-label split-left">All Samples</div>
+    <div class="split-label split-right">KNN Outliers</div>
+  </div>
+  <div id="clustering-labels" style="display: none;"></div>
+  <div id="pcoa-pair-overlay" style="display: none;">
+    <div class="split-divider"></div>
+    <div class="split-label split-left">i30 · 15.4M clusters</div>
+    <div class="split-label split-right">i95 · 42.2M clusters</div>
+  </div>
+  <div id="confusion-matrix"></div>
+
+  <!-- Title page overlay -->
+  <div id="title-page">
+    <div class="tp-title">Cyanoverse</div>
+    <div class="tp-meta">Lab Meeting &nbsp;&middot;&nbsp; Tony Liu</div>
+    <div class="tp-date">2026 03 26</div>
+  </div>
+
+  <!-- Sample ring labels injected dynamically by sample-rings.js -->
+
+  <!-- Decomposition split-view divider -->
+  <div id="split-divider" style="position:fixed;left:50%;top:0;width:1px;height:100%;background:rgba(255,255,255,0.15);pointer-events:none;display:none;z-index:10;"></div>
+
+  <!-- Sample overview panel (slide 2) -->
+  <div id="sample-overview-panel" class="panel" style="top:50%;left:50%;transform:translate(-50%,-50%);width:36rem;max-height:80vh;overflow-y:auto;"></div>
+
+  <!-- Outlier annotation panels -->
+  <div id="saltwater-outlier-panel" class="panel" style="top: 7rem; left: 2rem; max-width: 480px; background: transparent;">
+    <h3 style="margin:0 0 0.8rem 0;font-size:1.43rem;color:#6e7ef0">Marine Cluster Outliers</h3>
+    <p style="margin:0 0 0.7rem 0;font-size:1.2rem;color:#90a0b8">20 non-marine samples that embed within the marine cluster.</p>
+    <ul style="margin:0.5rem 0;padding-left:1.2rem;list-style:none;font-size:1.17rem">
+      <li style="color:#00cc96;font-weight:600;margin-top:0.5rem">Fresh Water (15)
+        <ul style="margin:0.15rem 0 0 0;padding-left:0.9rem;list-style:disc;font-weight:400;color:#7090b0;font-size:1.08rem">
+          <li>5 stratified Lake Tanganyika</li>
+          <li>4 stratified Lake Biwa</li>
+          <li>2 freshwater, Australia</li>
+          <li>1 thermal spring microbial mat, Costa Rica</li>
+          <li>1 salt marsh, Woods Hole</li>
+          <li>1 rice paddy, Senegal</li>
+          <li>1 Danish sp.</li>
+        </ul>
+      </li>
+      <li style="color:#ef553b;font-weight:600;margin-top:0.5rem">Artificial (3)
+        <ul style="margin:0.15rem 0 0 0;padding-left:0.9rem;list-style:disc;font-weight:400;color:#7090b0;font-size:1.08rem">
+          <li>1 photobioreactor</li>
+          <li>1 lab strain</li>
+          <li>1 lab culture</li>
+        </ul>
+      </li>
+      <li style="color:#ab63fa;font-weight:600;margin-top:0.5rem">Host-Associated (1)
+        <ul style="margin:0.15rem 0 0 0;padding-left:0.9rem;list-style:disc;font-weight:400;color:#7090b0;font-size:1.08rem">
+          <li>1 sponge-associated</li>
+        </ul>
+      </li>
+      <li style="color:#ffa15a;font-weight:600;margin-top:0.5rem">Terrestrial (1)
+        <ul style="margin:0.15rem 0 0 0;padding-left:0.9rem;list-style:disc;font-weight:400;color:#7090b0;font-size:1.08rem">
+          <li>1 terrestrial biome (near Ise shrine, Japan)</li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+
+  <div id="artificial-panel" class="panel" style="top: 7rem; right: 2rem; max-width: 340px;">
+    <h3 style="margin:0 0 0.6rem 0;font-size:0.95rem;color:#ef553b">Anatomy of the Artificial Cluster</h3>
+    <p style="margin:0 0 0.5rem 0;font-size:0.8rem;color:#90a0b8">788 samples from lab and experimental settings form dense low-diversity clusters.</p>
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:0.2rem 0.6rem;font-size:0.78rem;margin:0.4rem 0">
+      <span style="font-weight:600;color:#d0d8e4">278</span><span style="color:#7090b0">Lab cultures — standard isolates</span>
+      <span style="font-weight:600;color:#d0d8e4">46</span><span style="color:#7090b0">Nitrogen depletion experiments</span>
+      <span style="font-weight:600;color:#d0d8e4">44</span><span style="color:#7090b0">Space/regolith analogues (BG-11)</span>
+      <span style="font-weight:600;color:#d0d8e4">37</span><span style="color:#7090b0">Chemostat continuous cultures</span>
+      <span style="font-weight:600;color:#d0d8e4">38</span><span style="color:#7090b0">Temperature/light experiments</span>
+    </div>
+    <p style="margin:0.6rem 0 0 0;font-size:0.72rem;color:#506070;font-style:italic">Environmental outliers gravitate toward these clusters when their diversity drops — low-biomass freshwater and intertidal samples converge on culture-like composition.</p>
+  </div>
+
+  <div id="metal-panel" class="panel" style="top: 7rem; right: 2rem; max-width: 380px;">
+    <h3 style="margin:0 0 0.6rem 0;font-size:0.95rem;color:#f0c040">Metal Tolerance</h3>
+    <p style="margin:0 0 0.7rem 0;font-size:0.8rem;color:#90a0b8">81.5% of samples contain genera with documented metal resistance genes.</p>
+    <div style="display:flex;flex-direction:column;gap:0.5rem;font-size:0.78rem;margin:0.4rem 0">
+      <div>
+        <span style="font-weight:600;color:#e8913a">Cu 70.6%</span> <span style="color:#7090b0">Copper</span>
+        <div style="font-size:0.68rem;color:#506070;margin-top:0.1rem"><em>cop</em>, <em>cus</em>, <em>cue</em>, <em>pco</em></div>
+      </div>
+      <div>
+        <span style="font-weight:600;color:#7090d0">Zn 65.7%</span> <span style="color:#7090b0">Zinc</span>
+        <div style="font-size:0.68rem;color:#506070;margin-top:0.1rem"><em>czc</em>, <em>znt</em>, <em>znu</em>, <em>cad</em></div>
+      </div>
+      <div>
+        <span style="font-weight:600;color:#50b880">As 60.1%</span> <span style="color:#7090b0">Arsenic</span>
+        <div style="font-size:0.68rem;color:#506070;margin-top:0.1rem"><em>ars</em>, <em>acr3</em>, <em>aio</em>, <em>arr</em></div>
+      </div>
+      <div>
+        <span style="font-weight:600;color:#b070d0">Hg 59.4%</span> <span style="color:#7090b0">Mercury</span>
+        <div style="font-size:0.68rem;color:#506070;margin-top:0.1rem"><em>mer</em> (<em>merA/B/R</em>)</div>
+      </div>
+    </div>
+    <div style="margin:0.7rem 0 0 0;padding-top:0.5rem;border-top:1px solid rgba(255,255,255,0.06)">
+      <h4 style="margin:0 0 0.3rem 0;font-size:0.78rem;color:#50b880">Arsenic Hotspots</h4>
+      <p style="margin:0 0 0.3rem 0;font-size:0.72rem;color:#90a0b8">Two clusters with near-complete <em>Synechocystis</em> <em>ars</em> operon coverage:</p>
+      <div style="font-size:0.7rem;margin:0.2rem 0;color:#7090b0">
+        <div style="margin-bottom:0.2rem"><span style="color:#ef553b;font-weight:600">Artificial</span> — 127 lab cultures (PCC 6803), mainly Germany &amp; Japan</div>
+        <div><span style="color:#00cc96;font-weight:600">Fresh water</span> — 25 samples from California lakes &amp; Japanese freshwater</div>
+      </div>
+    </div>
+    <p style="margin:0.6rem 0 0 0;font-size:0.65rem;color:#506070;font-style:italic">Point color = dominant metal; brightness ∝ genome fraction covered.</p>
+  </div>
+
+  <!-- Decomposition UMAP program info panel (shared by NMF/LDA/VAE scenes) -->
+  <div id="decomp-info-panel" class="panel" style="top:6rem;right:1.5rem;width:18rem;max-height:calc(100vh - 8rem);overflow-y:auto;font-size:0.78rem;line-height:1.45;padding:1.2rem;background:transparent;border:none;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);">
+    <h4 style="margin:0 0 0.4rem;font-size:0.8rem;color:#90c8ff;">6 Concordant Programs</h4>
+    <p style="color:#6888a0;margin:0 0 0.5rem;font-size:0.7rem;">Recovered independently by NMF, LDA, and dVAE &mdash; 3.8% of centroids, 33% of sequencing depth.</p>
+    <div style="color:#b0c0d0;font-size:0.72rem;">
+      <p style="margin:0.3rem 0;"><strong style="color:rgb(160,90,255);">P5 Core Cyanobacterial</strong> &mdash; 26.6% depth. RuBisCO, PSI/PSII, ATP synthase.</p>
+      <p style="margin:0.3rem 0;"><strong style="color:rgb(0,210,170);">P2 Biofilm Formation</strong> &mdash; glycosyltransferases, wza/wzb/wzc, type IV pili.</p>
+      <p style="margin:0.3rem 0;"><strong style="color:rgb(220,60,60);">P4 Glycan Metabolism</strong> &mdash; glycoside hydrolases, sugar kinases.</p>
+      <p style="margin:0.3rem 0;"><strong style="color:rgb(64,169,255);">P1 Heavy Metal Tolerance</strong> &mdash; czc efflux, copA, arsR regulators. r=0.78.</p>
+      <p style="margin:0.3rem 0;"><strong style="color:rgb(255,145,77);">P3 Carbon Fixation</strong> &mdash; 4,932 ORFs. Wood-Ljungdahl, pyruvate synthase.</p>
+      <p style="margin:0.3rem 0;"><strong style="color:rgb(255,200,50);">P6 N&#x2082; Fixation Partners</strong> &mdash; ectoine, arylpolyene, siderophores.</p>
+    </div>
+
+  <div id="biofilm-panel" class="panel" style="top: 7rem; right: 2rem; max-width: 380px;">
+    <h3 style="margin:0 0 0.6rem 0;font-size:0.95rem;color:#00cc96">Biofilm: A Shared Toolkit</h3>
+    <p style="margin:0 0 0.5rem 0;font-size:0.8rem;color:#90a0b8">1,078 biofilm marker centroids (bcsC, wza/wzc, pgaAB, glgP) show no concentration in any functional component.</p>
+    <div id="biofilm-chart" style="width:100%;height:140px;margin:0.4rem 0"></div>
+    <p style="margin:0 0 0;font-size:0.78rem;color:#d0d8e4">AUROC range: <strong>0.49 – 0.55</strong> (vs. N<sub>2</sub> fixation 0.52 – 0.62, carbon fixation 0.52 – 0.65)</p>
+    <p style="margin:0.4rem 0 0 0;font-size:0.72rem;color:#506070;font-style:italic">Biofilm formation is a general capability — every community carries biofilm machinery. Unlike nitrogen fixation or carbon fixation, it cannot be decomposed into a specialized program.</p>
+  </div>
+
+  <div id="takeaways-panel" class="panel" style="top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: 640px; width: 90%;">
+    <h3 style="margin:0 0 1rem 0; font-size:1.1rem; color:#7090d0">Key Takeaways</h3>
+    <ul style="margin:0; padding-left:1.2rem; list-style:none; font-size:0.85rem; line-height:1.8">
+      <li style="margin-bottom:0.8rem; color:#d0d8e4">
+        <span style="color:#ef553b; font-weight:600">Contamination as Ecology</span> —
+        75% of cyanobacterial genomes harbor stable heterotrophic co-cultures, revealing obligately cooperative metabolic networks rather than isolated producers.
+      </li>
+      <li style="margin-bottom:0.8rem; color:#d0d8e4">
+        <span style="color:#636efa; font-weight:600">Community Archetypes</span> —
+        NMF across three functional layers reveals 8 archetypes dominated by a single core (A7, 72.6% of samples), with rare specialist minorities in distinct niches.
+      </li>
+      <li style="margin-bottom:0.8rem; color:#d0d8e4">
+        <span style="color:#00cc96; font-weight:600">Fixer Monopoly Requires Leakage</span> —
+        Metabolic models predict &gt;99.99% cyanobacterial biomass, but empirical data shows 69%. A leakage fraction of 0.31 precisely bridges this gap analytically.
+      </li>
+      <li style="color:#d0d8e4">
+        <span style="color:#ffa15a; font-weight:600">Enzyme Budget Tradeoff</span> —
+        Optimal fixer breadth &asymp; 3 pathways; beyond this, enzyme cost exceeds self-supply benefit, establishing conditions for stable heterotroph coexistence.
+      </li>
+    </ul>
+  </div>
+
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+</body>
+</html>
